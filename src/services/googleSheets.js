@@ -2,18 +2,35 @@ const { sheets } = require("../config/googleAuth");
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
-const addToSheet = async (data) => {
+const addToSheetRaw = async (data) => {
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Sheet1!A:D",
+      range: "raw!A:D",
       valueInputOption: "RAW",
       requestBody: { values: [data] },
     });
-    console.log("Data added to Google Sheet");
+    console.log("Data added to Google Sheet Raw");
   } catch (error) {
-    console.error("Error adding data to sheet:", error);
+    console.error("Error adding data to sheet raw:", error);
   }
 };
 
-module.exports = addToSheet;
+const addToSheetData = async (data) => {
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "data!A:D",
+      valueInputOption: "RAW",
+      requestBody: { values: [data] },
+    });
+    console.log("Data added to Google Sheet Data");
+  } catch (error) {
+    console.error("Error adding data to sheet data:", error);
+  }
+};
+
+module.exports = {
+  addToSheetRaw,
+  addToSheetData,
+};
