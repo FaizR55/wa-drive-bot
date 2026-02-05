@@ -6,51 +6,51 @@ const uploadToDrive = require("../services/googleDrive");
 
 const handleMessage = async (client, message) => {
   try {
-    if (message.isGroupMsg && message.mentionedJidList.length > 0) {
+    // wwjs check if message is from group and has mentions
+    const isGroupMsg = message.from && message.from.endsWith('@g.us');
+    const mentionedJidList = message.mentionedIds || [];
+    if (isGroupMsg && mentionedJidList.length > 0) {
+      console.log("📩 New message received:", message);
 
-        console.log("📩 New message received:", message);
+      // In wwjs, message.author is the sender's ID in group chats
+      const sender = message._data?.notifyName || message.author || message.from;
+      let text = '';
+      if (message.body) {
+        text = message.body.replace(/@\d+/g, '').trim();
+      }
+      let imageUrl = null;
+      const date = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
-        const sender = message.sender.pushname || message.sender.id;
-        let text = '';
-        if (message.body) {
-          text = message.body.replace(/@\d+/g, '').trim();
+      // If the message contains media (image, video, etc.)
+      if (message.hasMedia && message.type === 'image') {
+        if (message.caption) {
+          text = message.caption.replace(/@\d+/g, '').trim();
         }
-        let imageUrl = null;
-        const date = new Date().toISOString().replace('T', ' ').substring(0, 19);
+        console.log("🖼️ Image detected:", message.type);
+        console.log("Image caption:", message.caption);
+        const mediaData = await message.downloadMedia();
 
-        // If the message contains media (image, video, etc.)
-        if (message.mimetype && message.mimetype.startsWith("image")) {
-            if (message.caption) {
-              text = message.caption.replace(/@\d+/g, '').trim();
-            }
-            console.log("🖼️ Image detected:", message.mimetype);
-            console.log("Image caption:", message.caption);
-            const mediaData = await client.decryptFile(message);
-    
-            // Check 'uploads' dir exists
-            const uploadPath = path.join(__dirname, "../../uploads");
-            if (!fs.existsSync(uploadPath)) {
-                fs.mkdirSync(uploadPath, { recursive: true });
-            }
-
-            // Save file to local
-            const extension = message.mimetype.split("/")[1];
-            const filename = `${message.sender.id}-${Date.now()}-whatsapp.${extension}`
-            const filePath = path.join(uploadPath, filename);
-            fs.writeFileSync(filePath, mediaData);
-            // Save to Drive
-            require("fs").writeFileSync(filePath, mediaData);
-            imageUrl = await uploadToDrive(filename, filePath);
-    
-            console.log(`✅ File saved: ${filename}`);
+        // Check 'uploads' dir exists
+        const uploadPath = path.join(__dirname, "../../uploads");
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
         }
 
-        db.run(`INSERT INTO messages (sender, message, image_url) VALUES (?, ?, ?)`, [sender, text, imageUrl]);
+        // Save file to local
+        const extension = mediaData.mimetype.split("/")[1];
+        const filename = `${sender}-${Date.now()}-whatsapp.${extension}`;
+        const filePath = path.join(uploadPath, filename);
+        fs.writeFileSync(filePath, Buffer.from(mediaData.data, 'base64'));
+        imageUrl = await uploadToDrive(filename, filePath);
+        console.log(`✅ File saved: ${filename}`);
+      }
 
-        await addToSheetRaw([sender, text, imageUrl || "No Image", date]);
-        await addToSheetData([sender, text, imageUrl || "No Image", date]);
-        await message.reply("✅ Message logged successfully!");
-        console.log(); 
+      db.run(`INSERT INTO messages (sender, message, image_url) VALUES (?, ?, ?)`, [sender, text, imageUrl]);
+
+      await addToSheetRaw([sender, text, imageUrl || "No Image", date]);
+      await addToSheetData([sender, text, imageUrl || "No Image", date]);
+      await message.reply("✅ Message logged successfully!");
+      console.log();
     }
   } catch (error) {
     console.error("Error handling message:", error);

@@ -1,6 +1,7 @@
 node_modules
-gcredentials.json
+gcreds.json
 database.db 
 .env
-tokens
 uploads
+tokens
+.wwebjs_cache
