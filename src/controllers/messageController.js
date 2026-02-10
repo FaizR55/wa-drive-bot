@@ -1,4 +1,5 @@
-const db = require("../db/sqlite");
+const dbModule = require("../db/sqlite");
+const db = dbModule.db();
 const fs = require("fs");
 const path = require("path");
 const { addToSheetRaw, addToSheetData } = require('../services/googleSheets');

@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const db = require("../db/sqlite");
+const dbModule = require("../db/sqlite");
+const db = dbModule.db();
 
 const JWT_SECRET = process.env.JWT_SECRET;
 

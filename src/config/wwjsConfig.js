@@ -48,6 +48,54 @@ const createBot = async () => {
       }
     });
 
+    // Update status on various events
+    client.on('authenticated', () => {
+      globalState.setStatus({
+        isAuthenticated: true,
+        lastUpdate: new Date().toISOString()
+      });
+      console.log('Status updated: AUTHENTICATED');
+    });
+
+    client.on('ready', async () => {
+      try {
+        const wwebVersion = await client.getWWebVersion();
+        globalState.setStatus({
+          isReady: true,
+          isConnected: true,
+          lastUpdate: new Date().toISOString(),
+          wwebVersion: wwebVersion
+        });
+      } catch (err) {
+        console.error('Error getting WWeb version:', err);
+        globalState.setStatus({
+          isReady: true,
+          isConnected: true,
+          lastUpdate: new Date().toISOString()
+        });
+      }
+      console.log("✅ wa-drive is ready!");
+    });
+
+    client.on('disconnected', (reason) => {
+      globalState.setStatus({
+        isConnected: false,
+        isReady: false,
+        lastUpdate: new Date().toISOString(),
+        error: reason
+      });
+      console.log('Status updated: DISCONNECTED');
+    });
+
+    client.on('auth_failure', (msg) => {
+      globalState.setStatus({
+        isAuthenticated: false,
+        error: msg,
+        lastUpdate: new Date().toISOString()
+      });
+      console.log('Status updated: AUTH_FAILURE');
+    });
+
     client.on('authenticated', () => {
       console.log('AUTHENTICATED ✅');
       // Clear QR code after authentication
