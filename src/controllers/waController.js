@@ -1,4 +1,4 @@
-const { handleWhatsAppLogin, handleWhatsAppLogout, handleWhatsAppReinitialize, getLatestClient, generateQRHTML } = require("../config/wwjsConfig");
+const { handleWhatsAppLogin, handleWhatsAppLogout, handleWhatsAppReinitialize, getLatestClient, generateQRHTML, startBot } = require("../config/wwjsConfig");
 const globalState = require("../config/globalState");
 
 // WhatsApp logout controller
@@ -34,38 +34,76 @@ const logout = async (req, res) => {
 };
 
 // WhatsApp login controller - Create bot if needed and display QR code or status
-const login = async (req, res, startBot) => {
+const login = async (req, res) => {
   try {
     let globalClient = globalState.getClient();
-    const clientStatus = globalState.getStatus();
+    let clientStatus = globalState.getStatus();
     
     // If no client exists, create one
     if (!globalClient) {
-      console.log("No WhatsApp client found, creating new one...");
-      await startBot();
+      console.log("No WhatsApp client found, starting new one...");
+      const newClient = await startBot();
       
-      // Wait a bit for the QR to generate
-      let attempts = 0;
-      const maxAttempts = 10; // 20 seconds total
+      // Set client in global state immediately after creation
+      if (newClient) {
+        globalState.setClient(newClient);
+        globalClient = newClient;
+        console.log("✅ Client created and set in global state");
+      }
       
-      while (attempts < maxAttempts && globalState.getClient()) {
+      // Wait and retry checking client status after startBot
+      console.log("Waiting for client to be ready...");
+      let statusCheckAttempts = 0;
+      const maxStatusCheckAttempts = 10; // 20 seconds total
+      while (statusCheckAttempts < maxStatusCheckAttempts) {
         await new Promise(resolve => setTimeout(resolve, 2000));
-        const qrData = require('../config/wwjsConfig').getCurrentQRCode();
         
-        if (qrData.hasQR) {
-          console.log("✅ QR code generated successfully for new client");
+        globalClient = globalState.getClient();
+        clientStatus = globalState.getStatus();
+        
+        if (clientStatus.isReady && clientStatus.isAuthenticated) {
+          console.log("✅ Client is ready and authenticated");
+          globalClient = globalState.getClient(); // Update globalClient immediately
           break;
         }
         
-        attempts++;
-        console.log(`Waiting for QR code generation... Attempt ${attempts}/${maxAttempts}`);
+        statusCheckAttempts++;
+        console.log(`Status check ${statusCheckAttempts}/${maxStatusCheckAttempts}...`);
       }
       
-      globalClient = globalState.getClient();
+      // Re-check status after the waiting loop
+      clientStatus = globalState.getStatus();
+      
+      // Only wait for QR if client is NOT fully ready and authenticated
+      if (!(clientStatus && clientStatus.isReady && clientStatus.isAuthenticated)) {
+        console.log("Client needs QR authentication, waiting for QR code...");
+        
+        // Wait a bit for the QR to generate
+        let attempts = 0;
+        const maxAttempts = 5; // 10 seconds total
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const qrData = require('../config/wwjsConfig').getCurrentQRCode();
+          
+          if (qrData.hasQR) {
+            console.log("✅ QR code generated successfully for new client");
+            break;
+          }
+          
+          attempts++;
+          console.log(`Waiting for QR code generation... Attempt ${attempts}/${maxAttempts}`);
+        }
+      }
+      
+      // Update client
+      if (!globalClient) {
+        globalClient = globalState.getClient();
+      }
     }
     
+    // Return response template
     const result = await handleWhatsAppLogin(globalClient, clientStatus, req);
-    
+
     // For web browser display
     if (req.headers.accept && req.headers.accept.includes('text/html')) {
       return res.send(generateQRHTML(result, req));
@@ -83,29 +121,11 @@ const login = async (req, res, startBot) => {
   }
 };
 
-// WhatsApp reinitialize controller - Delete auth and generate new QR
 const reinitialize = async (req, res) => {
   try {
     const globalClient = globalState.getClient();
     const result = await handleWhatsAppReinitialize(globalClient, req);
-    
-    // Get the new client if one was created
-    if (result.clientCreated) {
-      const newClient = getLatestClient();
-      if (newClient) {
-        globalState.setClient(newClient);
-        
-        // Reset client status since we're starting fresh
-        globalState.resetStatus();
-      }
-    }
-    
-    // For web browser display
-    if (req.headers.accept && req.headers.accept.includes('text/html')) {
-      return res.send(generateQRHTML(result, req));
-    }
-    
-    // For API/Postman response
+
     res.json(result);
     
   } catch (error) {

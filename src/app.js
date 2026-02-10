@@ -34,7 +34,7 @@ app.get("/", (req, res) => res.send("wa-drive is running 🚀"));
 app.post("/api/login", login);
 
 // Protected endpoints
-app.get("/api/stat", authenticateToken, waController.getStatus);
+app.get("/api/wa/stat", authenticateToken, waController.getStatus);
 app.post("/api/wa/logout", authenticateToken, waController.logout);
 app.post("/api/wa/login", authenticateToken, (req, res) => waController.login(req, res, startBot));
 app.post("/api/wa/reinitialize", authenticateToken, waController.reinitialize);
