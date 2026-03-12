@@ -3,7 +3,6 @@ const qrcode = require("qrcode-terminal");
 const QRCode = require("qrcode");
 const fs = require('fs');
 const path = require('path');
-const globalState = require('./globalState');
 
 // Store current QR code for web display
 let currentQRCode = null;
@@ -12,7 +11,7 @@ let qrCodeBase64 = null;
 // Prevent multiple initializations
 let isInitializing = false;
 
-const startBot = async () => {
+const createBot = async () => {
   console.log("wa-drive is starting...");
   try {
     const client = new Client({
@@ -49,57 +48,6 @@ const startBot = async () => {
       }
     });
 
-    // Update status on various events
-    client.on('authenticated', () => {
-      globalState.setStatus({
-        isAuthenticated: true,
-        lastUpdate: new Date().toISOString()
-      });
-      console.log('Status updated: AUTHENTICATED');
-    });
-
-    client.on('ready', async () => {
-      try {
-        const wwebVersion = await client.getWWebVersion();
-        globalState.setStatus({
-          isReady: true,
-          isConnected: true,
-          lastUpdate: new Date().toISOString(),
-          wwebVersion: wwebVersion
-        });
-      } catch (err) {
-        console.error('Error getting WWeb version:', err);
-        globalState.setStatus({
-          isReady: true,
-          isConnected: true,
-          lastUpdate: new Date().toISOString()
-        });
-      }
-      console.log("✅ wa-drive is ready!");
-    });
-
-    client.on('disconnected', (reason) => {
-      globalState.setStatus({
-        isConnected: false,
-        isReady: false,
-        lastUpdate: new Date().toISOString(),
-        error: reason
-      });
-      console.log('Status updated: DISCONNECTED');
-      // Clear QR code on disconnect
-      currentQRCode = null;
-      qrCodeBase64 = null;
-    });
-
-    client.on('auth_failure', (msg) => {
-      globalState.setStatus({
-        isAuthenticated: false,
-        error: msg,
-        lastUpdate: new Date().toISOString()
-      });
-      console.log('Status updated: AUTH_FAILURE');
-    });
-
     client.on('authenticated', () => {
       console.log('AUTHENTICATED ✅');
       // Clear QR code after authentication
@@ -116,7 +64,23 @@ const startBot = async () => {
 
     return client;
   } catch (error) {
-    console.error("❌ Error on startBot:", error);
+    console.error("❌ Error on createBot:", error);
+  }
+};
+
+// Function to disconnect WhatsApp client
+const disconnectWhatsApp = async (client) => {
+  try {
+    if (client) {
+      await client.destroy();
+      console.log("✅ WhatsApp client disconnected successfully");
+      return { success: true, message: "WhatsApp disconnected successfully" };
+    } else {
+      return { success: false, message: "No active WhatsApp client found" };
+    }
+  } catch (error) {
+    console.error("❌ Error disconnecting WhatsApp:", error);
+    return { success: false, message: "Error disconnecting WhatsApp", error: error.message };
   }
 };
 
@@ -127,6 +91,39 @@ const getCurrentQRCode = () => {
     qrCodeBase64: qrCodeBase64,
     hasQR: !!currentQRCode
   };
+};
+
+// Function to reinitialize WhatsApp connection (for getting new QR)
+const reinitializeWhatsApp = async (client) => {
+  // Prevent multiple simultaneous initializations
+  if (isInitializing) {
+    throw new Error("WhatsApp is already being initialized. Please wait.");
+  }
+
+  try {
+    isInitializing = true;
+    
+    if (client) {
+      console.log("Destroying existing client...");
+      await client.destroy();
+      // Wait longer to ensure browser fully closes
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+    
+    // Clear stored QR codes
+    currentQRCode = null;
+    qrCodeBase64 = null;
+    
+    console.log("Creating new WhatsApp client...");
+    const newClient = await createBot();
+    
+    return newClient;
+  } catch (error) {
+    console.error("❌ Error reinitializing WhatsApp:", error);
+    throw error;
+  } finally {
+    isInitializing = false;
+  }
 };
 
 // Function to handle WhatsApp login (QR code display)
@@ -185,13 +182,15 @@ const handleWhatsAppLogin = async (client, clientStatus, req) => {
 
 // Store the latest client for retrieval
 let latestClient = null;
+
+// Function to get the latest created client
 const getLatestClient = () => {
   const client = latestClient;
   latestClient = null; // Clear after retrieval
   return client;
 };
 
-// Reinitialize WhatsApp (destroy existing client and delete auth folder)
+// Function to completely reinitialize WhatsApp (delete auth and restart)
 const handleWhatsAppReinitialize = async (client, req) => {
   // Prevent multiple simultaneous reinitializations
   if (isInitializing) {
@@ -206,14 +205,14 @@ const handleWhatsAppReinitialize = async (client, req) => {
     isInitializing = true;
     console.log("🔄 Starting WhatsApp complete reinitialization...");
     
-    // Destroy existing client
+    // Step 1: Destroy existing client
     if (client) {
       console.log("Destroying existing client...");
       await client.destroy();
       await new Promise(resolve => setTimeout(resolve, 3000));
     }
     
-    // Delete auth folder
+    // Step 2: Delete auth folder
     const authPath = path.join(process.cwd(), 'tokens', '.wwebjs_auth');
     console.log(`Deleting auth folder: ${authPath}`);
     
@@ -224,14 +223,43 @@ const handleWhatsAppReinitialize = async (client, req) => {
       console.log("Auth folder doesn't exist, skipping deletion");
     }
     
-    // Clear stored QR codes
+    // Step 3: Clear stored QR codes
     currentQRCode = null;
     qrCodeBase64 = null;
-
+    
+    // Step 4: Create new client
+    console.log("Creating new WhatsApp client...");
+    const newClient = await createBot();
+    latestClient = newClient; // Store for retrieval
+    
+    // Step 5: Wait for QR generation
+    console.log("Waiting for QR code generation...");
+    let attempts = 0;
+    const maxAttempts = 15; // 30 seconds total
+    
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const qrData = getCurrentQRCode();
+      
+      if (qrData.hasQR) {
+        console.log("✅ New QR code generated successfully after reinitialization");
+        return {
+          success: true,
+          message: "WhatsApp reinitialized successfully. New QR code generated.",
+          clientCreated: true, // Just a flag to indicate new client was created
+          ...generateQRResponse(qrData, req)
+        };
+      }
+      
+      attempts++;
+      console.log(`Waiting for QR code generation... Attempt ${attempts}/${maxAttempts}`);
+    }
+    
+    // If no QR after all attempts
     return {
-      success: true,
-      message: "WhatsApp client was reinitialized please login again.",
-      clientCreated: false,
+      success: false,
+      message: "WhatsApp client was reinitialized but QR code generation timed out. Please try the login endpoint.",
+      clientCreated: true, // Just a flag to indicate new client was created
       timestamp: new Date().toISOString()
     };
     
@@ -297,7 +325,6 @@ const handleWhatsAppLogout = async (client) => {
     };
   }
 };
-
 const generateQRResponse = (qrData, req) => {
   return {
     message: "QR code generated successfully",
@@ -384,8 +411,10 @@ const generateQRHTML = (qrData, req) => {
 };
 
 module.exports = {
-  startBot,
+  createBot,
+  disconnectWhatsApp, // Keep for backward compatibility
   getCurrentQRCode,
+  reinitializeWhatsApp, // Keep for backward compatibility
   handleWhatsAppLogin,
   handleWhatsAppLogout,
   handleWhatsAppReinitialize,
