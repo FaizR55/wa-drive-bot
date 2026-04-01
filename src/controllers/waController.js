@@ -1,7 +1,6 @@
 const { handleWhatsAppLogin, handleWhatsAppLogout, handleWhatsAppReinitialize, getLatestClient, generateQRHTML, startBot } = require("../config/wwjsConfig");
 const globalState = require("../config/globalState");
 
-// WhatsApp logout controller
 const logout = async (req, res) => {
   try {
     const globalClient = globalState.getClient();
@@ -71,14 +70,14 @@ const login = async (req, res) => {
         console.log(`Status check ${statusCheckAttempts}/${maxStatusCheckAttempts}...`);
       }
       
-      // Re-check status after the waiting loop
+      // Re-check status client
       clientStatus = globalState.getStatus();
       
       // Only wait for QR if client is NOT fully ready and authenticated
       if (!(clientStatus && clientStatus.isReady && clientStatus.isAuthenticated)) {
         console.log("Client needs QR authentication, waiting for QR code...");
         
-        // Wait a bit for the QR to generate
+        // Wait for QR generate
         let attempts = 0;
         const maxAttempts = 5; // 10 seconds total
         while (attempts < maxAttempts) {
@@ -138,7 +137,6 @@ const reinitialize = async (req, res) => {
   }
 };
 
-// Status controller
 const getStatus = async (req, res) => {
   try {
     const clientStatus = globalState.getStatus();
