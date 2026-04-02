@@ -4,7 +4,26 @@ const path = require("path");
 const { addToSheetRaw, addToSheetData } = require('../services/googleSheets');
 const uploadToDrive = require("../services/googleDrive");
 const { createWP, closeWP, parseTemplate } = require("../services/openProject");
-const { getMasterDataAll, getMasterDataByType } = require("../services/masterData");
+const { getMasterDataAll, getMasterDataByType, createMasterData, updateMasterData, syncMasterData } = require("../services/masterData");
+
+// Parse simple "key: value" multiline body from WA messages
+function parseKeyValueBody(body) {
+  const result = {};
+  let currentKey = null;
+  let currentVal = [];
+  for (const line of body.split('\n')) {
+    const match = line.match(/^\s*(key|value|detail)\s*:\s*(.*)$/i);
+    if (match) {
+      if (currentKey) result[currentKey] = currentVal.join('\n').trim();
+      currentKey = match[1].trim().toLowerCase();
+      currentVal = [match[2]];
+    } else if (currentKey) {
+      currentVal.push(line);
+    }
+  }
+  if (currentKey) result[currentKey] = currentVal.join('\n').trim();
+  return result;
+}
 
 const handleMessage = async (client, message) => {
   try {
@@ -129,6 +148,40 @@ const handleMessage = async (client, message) => {
               await message.reply(templateText);
             }
           } catch (e) { console.error("reply error:", e.message); }
+
+        } else if (command === 'op/master-data/create') {
+          const parsed = parseKeyValueBody(body);
+          if (!parsed.key || !parsed.value) {
+            try { await message.reply('❌ Missing fields. Format:\nkey: <key>\nvalue: [{"id":1,"value":"Example"}]'); } catch (e) { console.error('reply error:', e.message); }
+            return;
+          }
+          try {
+            const result = await createMasterData(parsed.key, parsed.value, parsed.detail);
+            await message.reply(JSON.stringify(result, null, 2));
+          } catch (e) { await message.reply(JSON.stringify({ error: e.message }, null, 2)); }
+
+        } else if (command === 'op/master-data/update') {
+          const parsed = parseKeyValueBody(body);
+          if (!parsed.key || !parsed.value) {
+            try { await message.reply('❌ Missing fields. Format:\nkey: <key>\nvalue: [{"id":1,"value":"Example"}]'); } catch (e) { console.error('reply error:', e.message); }
+            return;
+          }
+          try {
+            const result = await updateMasterData(parsed.key, parsed.value);
+            await message.reply(JSON.stringify(result, null, 2));
+          } catch (e) { await message.reply(JSON.stringify({ error: e.message }, null, 2)); }
+
+        } else if (command === 'op/master-data/sync') {
+          const type = body.trim();
+          if (!type) {
+            try { await message.reply('❌ Missing type. Usage: !op/master-data/sync <type>\nSupported: type, priority, assignee, status'); } catch (e) { console.error('reply error:', e.message); }
+            return;
+          }
+          try {
+            await message.reply(`🔄 Syncing master data for *${type}*...`);
+            const result = await syncMasterData(type);
+            await message.reply(JSON.stringify(result, null, 2));
+          } catch (e) { await message.reply(JSON.stringify({ error: e.message }, null, 2)); }
 
         } else {
           try { await message.reply(`❓ Unknown command: *!${command}*`); } catch (e) { console.error("reply error:", e.message); }

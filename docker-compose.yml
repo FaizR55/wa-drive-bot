@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  wa-drive-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wa-drive-bot
+    ports:
+      - "${PORT}:${PORT}"
+    env_file:
+      - .env
+    volumes:
+      # Mount credentials from a host file path
+      - type: bind
+        source: ${GOOGLE_CREDENTIALS:-./gcreds.json}
+        target: /app/gcreds.json
+        read_only: true
+      # Mount .env file for configuration
+      - type: bind
+        source: ./.env
+        target: /app/.env
+        read_only: true
+      # Mount initial database
+      - type: bind
+        source: ./database.db
+        target: /app/database.db
+      # Persistent data volumes
+      - wa_bot_data:/data
+      - wa_bot_uploads:/app/uploads
+    restart: unless-stopped
+    # Uncomment for development with file watching
+    # command: npm run dev
+    # volumes:
+    #   - ./src:/app/src
+
+volumes:
+  wa_bot_data:
+  wa_bot_uploads:

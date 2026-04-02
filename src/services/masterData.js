@@ -128,218 +128,93 @@ function dbAll(sql, params = []) {
   });
 }
 
+async function createMasterData(key, value, detail) {
+  const parsedPayload = parseMasterDataPayload({ key, value, detail });
+  if (parsedPayload.error) return { success: false, status: 400, error: "Invalid payload", message: parsedPayload.error, timestamp: new Date().toISOString() };
+
+  const { key: k, value: v, detail: d } = parsedPayload.data;
+  const existing = await dbGet("SELECT id FROM master_data WHERE key = ?", [k]);
+  if (existing) return { success: false, status: 409, error: "Master data already exists", message: `Master data with key '${k}' already exists`, key: k, timestamp: new Date().toISOString() };
+
+  await dbRun("INSERT INTO master_data (key, value, detail) VALUES (?, ?, ?)", [k, JSON.stringify(v), d || null]);
+  return { success: true, status: 201, message: `Master data for ${k} created successfully`, key: k, value: v, detail: d || null, timestamp: new Date().toISOString() };
+}
+
+async function updateMasterData(key, value) {
+  const parsedPayload = parseMasterDataPayload({ key, value });
+  if (parsedPayload.error) return { success: false, status: 400, error: "Invalid payload", message: parsedPayload.error, timestamp: new Date().toISOString() };
+
+  const { key: k, value: v } = parsedPayload.data;
+  const existing = await dbGet("SELECT id, detail FROM master_data WHERE key = ?", [k]);
+  if (!existing) return { success: false, status: 404, error: "Not found", message: `No master data found for key: ${k}`, key: k, timestamp: new Date().toISOString() };
+
+  await dbRun("UPDATE master_data SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", [JSON.stringify(v), k]);
+  return { success: true, status: 200, message: `Master data for ${k} updated successfully`, key: k, value: v, detail: existing.detail, timestamp: new Date().toISOString() };
+}
+
 router.post("/master-data/create", authenticateToken, async (req, res) => {
   try {
-    const parsedPayload = parseMasterDataPayload(req.body);
-
-    if (parsedPayload.error) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid payload",
-        message: parsedPayload.error,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    const { key, value, detail } = parsedPayload.data;
-    const existingRecord = await dbGet(
-      "SELECT id FROM master_data WHERE key = ?",
-      [key]
-    );
-
-    if (existingRecord) {
-      return res.status(409).json({
-        success: false,
-        error: "Master data already exists",
-        message: `Master data with key '${key}' already exists`,
-        key,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    await dbRun(
-      "INSERT INTO master_data (key, value, detail) VALUES (?, ?, ?)",
-      [key, JSON.stringify(value), detail || null]
-    );
-
-    res.status(201).json({
-      success: true,
-      message: `Master data for ${key} created successfully`,
-      key,
-      value,
-      detail: detail || null,
-      timestamp: new Date().toISOString()
-    });
+    const result = await createMasterData(req.body.key, req.body.value, req.body.detail);
+    res.status(result.status).json(result);
   } catch (error) {
     console.error("Error creating master data:", error.message);
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to create master data",
-      message: error.message,
-      timestamp: new Date().toISOString()
-    });
+    res.status(500).json({ success: false, error: "Failed to create master data", message: error.message, timestamp: new Date().toISOString() });
   }
 });
 
 router.put("/master-data/update", authenticateToken, async (req, res) => {
   try {
-    const parsedPayload = parseMasterDataPayload(req.body);
-
-    if (parsedPayload.error) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid payload",
-        message: parsedPayload.error,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    const { key, value } = parsedPayload.data;
-    const existingRecord = await dbGet(
-      "SELECT id, detail FROM master_data WHERE key = ?",
-      [key]
-    );
-
-    if (!existingRecord) {
-      return res.status(404).json({
-        success: false,
-        error: "Not found",
-        message: `No master data found for key: ${key}`,
-        key,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    await dbRun(
-      "UPDATE master_data SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?",
-      [JSON.stringify(value), key]
-    );
-
-    res.json({
-      success: true,
-      message: `Master data for ${key} updated successfully`,
-      key,
-      value,
-      detail: existingRecord.detail,
-      timestamp: new Date().toISOString()
-    });
+    const result = await updateMasterData(req.body.key, req.body.value);
+    res.status(result.status).json(result);
   } catch (error) {
     console.error("Error updating master data:", error.message);
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to update master data",
-      message: error.message,
-      timestamp: new Date().toISOString()
-    });
+    res.status(500).json({ success: false, error: "Failed to update master data", message: error.message, timestamp: new Date().toISOString() });
   }
 });
+
+async function syncMasterData(type) {
+  if (!SUPPORTED_TYPES.includes(type)) {
+    return { success: false, status: 400, error: "Invalid type", message: `Type must be one of: ${SUPPORTED_TYPES.join(", ")}`, timestamp: new Date().toISOString() };
+  }
+
+  const typeMap = { type: "types", priority: "priorities", assignee: "users", status: "statuses" };
+  const apiEndpoint = `${BASE_URL}/api/v3/${typeMap[type]}`;
+
+  let response;
+  try {
+    response = await axios.get(apiEndpoint, { headers });
+  } catch (apiErr) {
+    const msg = apiErr.response?.data?.message || apiErr.message;
+    console.error("API Error (syncMasterData):", msg);
+    return { success: false, status: 500, message: `Failed to fetch master data: ${msg}` };
+  }
+
+  if (!response.data?._embedded?.elements) {
+    return { success: false, status: 400, error: "Invalid API response", message: "API response does not contain expected structure", timestamp: new Date().toISOString() };
+  }
+
+  const elements = response.data._embedded.elements;
+  const mappedData = elements.map(el => ({ id: el.id, value: el.name }));
+  const valueJson = JSON.stringify(mappedData);
+
+  const existing = await dbGet("SELECT id FROM master_data WHERE key = ?", [type]);
+  if (existing) {
+    await dbRun("UPDATE master_data SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", [valueJson, type]);
+  } else {
+    await dbRun("INSERT INTO master_data (key, value) VALUES (?, ?)", [type, valueJson]);
+  }
+
+  return { success: true, status: 200, message: `Master data for ${type} updated successfully`, type, count: mappedData.length, data: mappedData, timestamp: new Date().toISOString() };
+}
 
 // Sync master data from external API
 router.post("/master-data/sync/:type", authenticateToken, async (req, res) => {
   try {
-    const { type } = req.params;
-
-    // Validate type
-    if (!SUPPORTED_TYPES.includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid type",
-        message: `Type must be one of: ${SUPPORTED_TYPES.join(", ")}`,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // Map type to API endpoint
-    const typeMap = {
-      "type": "types",
-      "priority": "priorities",
-      "assignee": "users",
-      "status": "statuses",
-      "location": "custom_fields/2",
-      "process": "custom_fields/7",
-      "category": "custom_fields/8",
-    };
-
-    const apiEndpoint = `${BASE_URL}/api/v3/${typeMap[type]}`;
-
-    console.log(`Fetching ${type} data from ${apiEndpoint}...`);
-
-    // Fetch data from external API
-    // const response = await axios.get(apiEndpoint);
-
-    let response;
-    try {
-      response = await axios.get(
-        apiEndpoint,
-        { headers }
-      );
-    } catch (apiErr) {
-      // Axios error: show status and message
-      const apiErrorMsg = apiErr.response?.data?.message || apiErr.response?.data || apiErr.message;
-      console.error("API Error (getMasterData):", apiErrorMsg);
-      return res.status(500).json({ success: false, message: `Failed to fetch master data: ${apiErrorMsg}` });
-    }
-
-    // console.log("API Response Data:", JSON.stringify(response.data, null, 2));
-    if (!response.data || !response.data._embedded || !response.data._embedded.elements) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid API response",
-        message: "API response does not contain expected structure",
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // Extract elements and map to simple format
-    const elements = response.data._embedded.elements;
-    const mappedData = elements.map(el => ({
-      id: el.id,
-      value: el.name
-    }));
-
-    // Convert to JSON string for storage
-    const valueJson = JSON.stringify(mappedData);
-
-    // Check if record exists
-    const existingRecord = await dbGet(
-      "SELECT id FROM master_data WHERE key = ?",
-      [type]
-    );
-
-    if (existingRecord) {
-      // Update existing record
-      await dbRun(
-        "UPDATE master_data SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?",
-        [valueJson, type]
-      );
-    } else {
-      // Insert new record
-      await dbRun(
-        "INSERT INTO master_data (key, value) VALUES (?, ?)",
-        [type, valueJson]
-      );
-    }
-
-    res.json({
-      success: true,
-      message: `Master data for ${type} updated successfully`,
-      type,
-      count: mappedData.length,
-      data: mappedData,
-      timestamp: new Date().toISOString()
-    });
+    const result = await syncMasterData(req.params.type);
+    res.status(result.status).json(result);
   } catch (error) {
     console.error(`Error updating master data for ${req.params.type}:`, error.message);
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to update master data",
-      message: error.message,
-      type: req.params.type,
-      timestamp: new Date().toISOString()
-    });
+    res.status(500).json({ success: false, error: "Failed to update master data", message: error.message, type: req.params.type, timestamp: new Date().toISOString() });
   }
 });
 
@@ -471,5 +346,8 @@ module.exports = {
   masterDataRouter: router,
   setDatabase,
   getMasterDataAll,
-  getMasterDataByType
+  getMasterDataByType,
+  createMasterData,
+  updateMasterData,
+  syncMasterData
 };
