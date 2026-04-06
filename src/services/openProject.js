@@ -226,14 +226,27 @@ async function createWP(payload) {
     console.log("created lockVersion =", lockVersion);
 
     // add spent time
+
+    let custDur = false;
+    let duration = "PT5M"; // default 5 minutes
+    if (payload.starttime && payload.endtime) {
+      duration = toDuration(payload.starttime, payload.endtime);
+      custDur = true;
+    }
+
     await axios.post(
       `${BASE_URL}/api/v3/time_entries`,
       {
-        hours: "PT5M",
+        hours: duration,
         spentOn: payload.date,
         _links: {
           workPackage: { href: `/api/v3/work_packages/${wpId}` }
-        }
+        },
+        ...(custDur && {
+          comment: {
+            raw: `Work time: ${payload.starttime} - ${payload.endtime}`
+          }
+        })
       },
       { headers }
     );
@@ -298,6 +311,15 @@ async function createWP(payload) {
 //     return { success: false, message: err.response?.data || err.message };
 //   }
 // }
+
+function toDuration(start, end) {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+
+  const diff = (eh * 60 + em) - (sh * 60 + sm);
+
+  return `PT${diff}M`;
+}
 
 module.exports = {
   createWP,

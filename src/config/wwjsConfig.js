@@ -23,7 +23,9 @@ const createBot = async () => {
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-web-security",
-          "--disable-dev-shm-usage"
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--no-zygote",
         ],
       },
     });
@@ -232,21 +234,34 @@ const handleWhatsAppReinitialize = async (client, req) => {
     const newClient = await createBot();
     latestClient = newClient; // Store for retrieval
     
-    // Step 5: Wait for QR generation
+    // Step 5: Wait for QR generation or authentication
     console.log("Waiting for QR code generation...");
     let attempts = 0;
     const maxAttempts = 15; // 30 seconds total
+    let sessionAuthenticated = false;
+    newClient.once('authenticated', () => { sessionAuthenticated = true; });
     
     while (attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Exit early if client authenticated (session restored, no QR needed)
+      if (sessionAuthenticated) {
+        console.log("✅ WhatsApp authenticated from existing session, no QR needed");
+        return {
+          success: true,
+          message: "WhatsApp reinitialized and authenticated from existing session.",
+          clientCreated: true,
+          timestamp: new Date().toISOString()
+        };
+      }
+
       const qrData = getCurrentQRCode();
-      
       if (qrData.hasQR) {
         console.log("✅ New QR code generated successfully after reinitialization");
         return {
           success: true,
           message: "WhatsApp reinitialized successfully. New QR code generated.",
-          clientCreated: true, // Just a flag to indicate new client was created
+          clientCreated: true,
           ...generateQRResponse(qrData, req)
         };
       }
@@ -259,7 +274,7 @@ const handleWhatsAppReinitialize = async (client, req) => {
     return {
       success: false,
       message: "WhatsApp client was reinitialized but QR code generation timed out. Please try the login endpoint.",
-      clientCreated: true, // Just a flag to indicate new client was created
+      clientCreated: true,
       timestamp: new Date().toISOString()
     };
     

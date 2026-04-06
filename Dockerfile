@@ -14,17 +14,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install runtime dependencies for WhatsApp Web.js and Chromium
+# Install runtime dependencies for WhatsApp Web.js and headless Chromium
 RUN apk add --no-cache \
   dumb-init \
-  chromium \
-  nss \
-  freetype \
-  harfbuzz \
-  ca-certificates \
-  ttf-freefont
+  chromium-headless-shell \
+  ca-certificates
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-headless-shell
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 # Copy node_modules from builder
