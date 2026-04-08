@@ -14,23 +14,33 @@ let isInitializing = false;
 const createBot = async () => {
   console.log("wa-drive is starting...");
   try {
+    const puppeteerConfig = process.env.CHROMIUM_WS_ENDPOINT
+      ? {
+          browserWSEndpoint: process.env.CHROMIUM_WS_ENDPOINT,
+          timeout: 300000,
+        }
+      : {
+          headless: true,
+          timeout: 300000,
+          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-web-security",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--no-zygote",
+          ],
+        };
+
     const client = new Client({
       authStrategy: new LocalAuth({ dataPath: "tokens/.wwebjs_auth" }),
-      puppeteer: {
-        headless: true,
-        timeout: 300000, // 5 minutes for longer QR availability
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-web-security",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-zygote",
-        ],
-      },
+      puppeteer: puppeteerConfig,
     });
 
-    client.initialize();
+    client.initialize().catch((err) => {
+      console.error("❌ Error during client initialization:", err);
+    });
 
     client.on('loading_screen', (percent, message) => {
         console.log('Loading screen: ', percent, message);

@@ -182,7 +182,13 @@ async function syncMasterData(type) {
 
   let response;
   try {
-    response = await axios.get(apiEndpoint, { headers });
+    response = await axios.get(apiEndpoint, {
+      headers,
+      params: {
+        page: 1,
+        pageSize: 999
+      }
+    });
   } catch (apiErr) {
     const msg = apiErr.response?.data?.message || apiErr.message;
     console.error("API Error (syncMasterData):", msg);

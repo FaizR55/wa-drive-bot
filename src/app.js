@@ -126,7 +126,7 @@ dbModule.init
     app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 
     if (enableWhatsApp) {
-      startBot();
+      startBot().catch((err) => console.error("❌ Bot startup failed:", err));
     }
   })
   .catch((err) => {

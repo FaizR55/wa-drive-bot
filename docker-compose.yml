@@ -1,4 +1,17 @@
 services:
+  chromium:
+    image: ghcr.io/browserless/chromium:latest
+    environment:
+      - TIMEOUT=0
+      - CONCURRENT=5
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('net').connect(3000,'localhost',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   wa-drive-bot:
     build:
       context: .
@@ -8,6 +21,11 @@ services:
       - "${PORT}:${PORT}"
     env_file:
       - .env
+    environment:
+      - CHROMIUM_WS_ENDPOINT=ws://chromium:3000
+    depends_on:
+      chromium:
+        condition: service_healthy
     volumes:
       # Mount credentials from a host file path
       - type: bind
