@@ -31,7 +31,7 @@ const handleMessage = async (client, message) => {
     const isGroupMsg = message.from && message.from.endsWith('@g.us');
     const mentionedJidList = message.mentionedIds || [];
     if (isGroupMsg && mentionedJidList.length > 0) {
-      console.log("📩 New message received:", message);
+      console.log("📩 New message received:", message.body);
 
       // In wwjs, message.author is the sender's ID in group chats
       const sender = message._data?.notifyName || message.author || message.from;
@@ -135,6 +135,17 @@ const handleMessage = async (client, message) => {
               if (item.detail) lines.push(`_${item.detail}_`, '');
               item.value.forEach((v, i) => lines.push(`${i + 1}. [${v.id}] ${v.value || v.name || '-'}`));
               await message.reply(lines.join('\n'));
+            }
+          } catch (e) { console.error("reply error:", e.message); }
+
+        } else if (command === 'command') {
+          try {
+            const item = await getMasterDataByType('command');
+            if (!item) {
+              await message.reply(`❌ No command data found.`);
+            } else {
+              const commandText = item.value.map(v => v.value || v.name || '-').join('\n');
+              await message.reply(commandText);
             }
           } catch (e) { console.error("reply error:", e.message); }
 

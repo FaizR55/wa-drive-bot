@@ -86,6 +86,13 @@ router.post("/wa/login", authenticateToken, async (req, res) => {
       
       while (attempts < maxAttempts && globalClient) {
         await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Already authenticated via stored session — no QR needed
+        if (clientStatus?.isAuthenticated || clientStatus?.isReady) {
+          console.log("✅ Client already authenticated, skipping QR wait");
+          break;
+        }
+
         const qrData = require('./config/wwjsConfig').getCurrentQRCode();
         
         if (qrData.hasQR) {

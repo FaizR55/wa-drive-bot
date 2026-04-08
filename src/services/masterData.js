@@ -221,7 +221,7 @@ router.post("/master-data/sync/:type", authenticateToken, async (req, res) => {
 // Get master data from database
 router.get("/master-data/get/all", authenticateToken, async (req, res) => {
   try {
-    const records = await dbAll("SELECT * FROM master_data ORDER BY key ASC");
+    const records = await dbAll("SELECT * FROM master_data WHERE key NOT IN ('command', 'template') ORDER BY key ASC");
 
     const data = records.map((record) => ({
       key: record.key,
@@ -306,7 +306,7 @@ router.get("/master-data/get/:type", authenticateToken, async (req, res) => {
 });
 
 async function getMasterDataAll() {
-  const records = await dbAll("SELECT * FROM master_data ORDER BY key ASC");
+  const records = await dbAll("SELECT * FROM master_data WHERE key NOT IN ('command', 'template') ORDER BY key ASC");
   return records.map((record) => {
     let parsedValue;
     try {
